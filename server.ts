@@ -85,6 +85,67 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// SEO: Serve sitemap.xml with explicit XML content-type and HTTP 200
+const SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://vexrynlabs.vercel.app/</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://vexrynlabs.vercel.app/services</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://vexrynlabs.vercel.app/projects</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://vexrynlabs.vercel.app/about</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://vexrynlabs.vercel.app/process</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://vexrynlabs.vercel.app/contact</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+</urlset>`;
+
+const ROBOTS_TXT = `# robots.txt for https://vexrynlabs.vercel.app/
+User-agent: *
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+Sitemap: https://vexrynlabs.vercel.app/sitemap.xml
+`;
+
+app.get('/sitemap.xml', (_req, res) => {
+  res.header('Content-Type', 'application/xml; charset=utf-8');
+  res.status(200).send(SITEMAP_XML);
+});
+
+app.get('/robots.txt', (_req, res) => {
+  res.header('Content-Type', 'text/plain; charset=utf-8');
+  res.status(200).send(ROBOTS_TXT);
+});
+
 // API: Check email service configuration status
 app.get('/api/contact/status', (_req, res) => {
   res.json({
@@ -247,7 +308,15 @@ async function setupViteOrStatic() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res) => {
+      if (req.path === '/sitemap.xml') {
+        res.header('Content-Type', 'application/xml; charset=utf-8');
+        return res.status(200).send(SITEMAP_XML);
+      }
+      if (req.path === '/robots.txt') {
+        res.header('Content-Type', 'text/plain; charset=utf-8');
+        return res.status(200).send(ROBOTS_TXT);
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

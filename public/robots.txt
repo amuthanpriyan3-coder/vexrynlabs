@@ -1,0 +1,8 @@
+# robots.txt for https://vexrynlabs.vercel.app/
+User-agent: *
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+Sitemap: https://vexrynlabs.vercel.app/sitemap.xml
