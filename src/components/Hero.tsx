@@ -108,7 +108,8 @@ export const Hero: React.FC<HeroProps> = ({ onStartProject, onViewWork }) => {
                 type="button"
                 id="hero-view-work-btn"
                 onClick={onViewWork}
-                className="group inline-flex items-center justify-center gap-3 bg-[#CCFF00] text-black px-7 py-3.5 font-bold text-xs uppercase tracking-widest hover:bg-[#b8e600] transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#CCFF00]"
+                className="group inline-flex items-center justify-center gap-3 bg-[#CCFF00] text-black px-7 py-3.5 font-bold text-xs uppercase tracking-widest hover:bg-[#b8e600] active:bg-[#a6d100] transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#CCFF00] touch-manipulation"
+                style={{ touchAction: 'manipulation' }}
               >
                 <span>View Our Work</span>
                 <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-1 text-black" />
@@ -120,7 +121,8 @@ export const Hero: React.FC<HeroProps> = ({ onStartProject, onViewWork }) => {
                 type="button"
                 id="hero-start-project-btn"
                 onClick={onStartProject}
-                className="group inline-flex items-center justify-center gap-3 border border-white text-white px-7 py-3.5 font-bold text-xs uppercase tracking-widest hover:bg-white hover:text-black transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="group inline-flex items-center justify-center gap-3 border border-white text-white px-7 py-3.5 font-bold text-xs uppercase tracking-widest hover:bg-white hover:text-black active:bg-gray-200 active:text-black transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white touch-manipulation"
+                style={{ touchAction: 'manipulation' }}
               >
                 <span>Start a Project</span>
                 <ArrowUpRight className="w-3.5 h-3.5 text-current transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

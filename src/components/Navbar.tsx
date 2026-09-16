@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Menu, X, ArrowUpRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VexrynLogo } from './VexrynLogo';
+import {
+  NAV_LINKS,
+  navigateTo,
+  pathToSectionId,
+  sectionIdToPath,
+  isNavigating,
+  RoutePath,
+} from '../utils/navigation';
 
 interface NavbarProps {
   onStartProjectClick?: () => void;
@@ -13,96 +21,69 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
 
-  const navLinks = [
-    { label: 'Home', href: '#home', id: 'home' },
-    { label: 'Services', href: '#services', id: 'services' },
-    { label: 'Projects', href: '#projects', id: 'projects' },
-    { label: 'About', href: '#about', id: 'about' },
-    { label: 'Process', href: '#process', id: 'process' },
-    { label: 'Contact', href: '#contact', id: 'contact' },
-  ];
-
-  const scrollToSection = (targetId: string, updateHistory = true) => {
-    const cleanId = targetId.replace('#', '') || 'home';
-
-    // 1. Immediately close mobile menu
-    setMobileMenuOpen(false);
-
-    // 2. Set active section immediately for responsive visual feedback
-    setActiveSection(cleanId);
-
-    // 3. Update browser history if requested for back/forward navigation
-    if (updateHistory) {
-      const newHash = cleanId === 'home' ? '#home' : `#${cleanId}`;
-      if (window.location.hash !== newHash) {
-        window.history.pushState({ section: cleanId }, '', newHash);
-      }
-    }
-
-    // 4. Perform smooth scroll
-    const performScroll = () => {
-      if (cleanId === 'home') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-
-      const element = document.getElementById(cleanId);
-      if (element) {
-        const navHeight = 80;
-        const elementPosition = element.getBoundingClientRect().top + window.scrollY;
-        const offsetPosition = Math.max(0, elementPosition - navHeight);
-
-        window.scrollTo({
-          top: offsetPosition,
-          behavior: 'smooth',
-        });
-      }
-    };
-
-    performScroll();
-
-    // Secondary frame execution ensures mobile viewport settles if menu collapse causes reflow
-    requestAnimationFrame(() => {
-      performScroll();
-    });
-  };
-
-  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: RoutePath) => {
     e.preventDefault();
-    scrollToSection(href, true);
+    e.stopPropagation();
+    // 1. Immediately trigger navigation and smooth scroll
+    navigateTo(href);
+    // 2. Close mobile menu immediately
+    setMobileMenuOpen(false);
   };
 
-  const handleStartProject = () => {
-    scrollToSection('contact', true);
+  const handleStartProject = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    navigateTo('/contact');
+    setMobileMenuOpen(false);
     if (onStartProjectClick) {
       onStartProjectClick();
     }
   };
 
-  // Synchronize with browser back/forward and initial anchor hash
+  const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigateTo('/');
+    setMobileMenuOpen(false);
+  };
+
+  // Synchronize with browser back/forward and initial URL path or anchor hash
   useEffect(() => {
-    const handleLocationChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      const validSections = ['home', 'services', 'projects', 'about', 'process', 'contact'];
-      if (hash && validSections.includes(hash)) {
-        scrollToSection(hash, false);
-      } else if (!hash) {
-        scrollToSection('home', false);
+    const handleInitialLocation = () => {
+      const pathname = window.location.pathname;
+      const hash = window.location.hash;
+      const target = pathname && pathname !== '/' ? pathname : hash || '/';
+      const sectionId = pathToSectionId(target);
+      setActiveSection(sectionId);
+
+      if (sectionId !== 'home') {
+        setTimeout(() => {
+          navigateTo(sectionIdToPath(sectionId), { updateHistory: false });
+        }, 150);
       }
     };
 
-    window.addEventListener('popstate', handleLocationChange);
-    window.addEventListener('hashchange', handleLocationChange);
+    handleInitialLocation();
 
-    if (window.location.hash) {
-      const initialHash = window.location.hash.replace('#', '');
-      const validSections = ['home', 'services', 'projects', 'about', 'process', 'contact'];
-      if (validSections.includes(initialHash)) {
-        setTimeout(() => {
-          scrollToSection(initialHash, false);
-        }, 150);
+    const handlePopState = () => {
+      setMobileMenuOpen(false);
+      const sectionId = pathToSectionId(window.location.pathname || window.location.hash);
+      setActiveSection(sectionId);
+      navigateTo(sectionIdToPath(sectionId), { updateHistory: false });
+    };
+
+    const handleAppNavigate = (e: Event) => {
+      const customEvent = e as CustomEvent<{ sectionId: string; path: string }>;
+      if (customEvent.detail?.sectionId) {
+        setActiveSection(customEvent.detail.sectionId);
       }
-    }
+      setMobileMenuOpen(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('vexryn:navigate', handleAppNavigate);
 
     const handleResize = () => {
       if (window.innerWidth >= 768) {
@@ -112,16 +93,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
     window.addEventListener('resize', handleResize);
 
     return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('vexryn:navigate', handleAppNavigate);
       window.removeEventListener('resize', handleResize);
     };
   }, []);
 
-  // Update active section on scroll
+  // Update active section on scroll (scroll spy)
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
+
+      // Do not override active section while programmatic scroll animation is executing
+      if (isNavigating()) return;
 
       // Bottom boundary check
       const isAtBottom =
@@ -167,18 +151,22 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         {/* Logo on the left */}
         <a
-          href="#home"
+          href="/"
           id="nav-logo"
-          onClick={(e) => handleNavClick(e, '#home')}
-          className="group flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-[#CCFF00] rounded"
+          onClick={handleLogoClick}
+          className="group flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-[#CCFF00] rounded cursor-pointer select-none"
           aria-label="VEXRYN LABS Home"
         >
           <VexrynLogo size={36} showText={true} animated={true} />
         </a>
 
         {/* Desktop Navigation */}
-        <nav id="desktop-navigation" className="hidden md:flex items-center gap-8 text-xs font-medium uppercase tracking-widest text-gray-400" aria-label="Main Navigation">
-          {navLinks.map((link) => {
+        <nav
+          id="desktop-navigation"
+          className="hidden md:flex items-center gap-8 text-xs font-medium uppercase tracking-widest text-gray-400"
+          aria-label="Main Navigation"
+        >
+          {NAV_LINKS.map((link) => {
             const isActive = activeSection === link.id;
             return (
               <a
@@ -186,10 +174,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
                 id={`nav-link-${link.id}`}
                 href={link.href}
                 onClick={(e) => handleNavClick(e, link.href)}
-                className={`transition-colors duration-200 relative py-1 ${
-                  isActive
-                    ? 'text-white'
-                    : 'text-gray-400 hover:text-[#CCFF00]'
+                className={`transition-colors duration-200 relative py-1 cursor-pointer ${
+                  isActive ? 'text-white' : 'text-gray-400 hover:text-[#CCFF00]'
                 }`}
               >
                 <span>{link.label}</span>
@@ -227,7 +213,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
             type="button"
             id="mobile-menu-toggle-btn"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2.5 rounded text-gray-400 hover:text-white hover:bg-[#111111] border border-[#222222] transition-colors focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+            className="p-2.5 rounded text-gray-400 hover:text-white hover:bg-[#111111] border border-[#222222] transition-colors focus:outline-none focus:ring-1 focus:ring-[#CCFF00] cursor-pointer touch-manipulation"
+            style={{ touchAction: 'manipulation' }}
             aria-expanded={mobileMenuOpen}
             aria-label="Toggle navigation menu"
           >
@@ -244,11 +231,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className="md:hidden overflow-hidden bg-[#0A0A0A] border-b border-[#222222] px-6 py-6"
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="md:hidden overflow-hidden bg-[#0A0A0A] border-b border-[#222222] px-6 py-6 touch-manipulation relative z-50 pointer-events-auto"
+            style={{ touchAction: 'manipulation' }}
           >
-            <div className="flex flex-col space-y-3">
-              {navLinks.map((link) => {
+            <div className="flex flex-col space-y-2">
+              {NAV_LINKS.map((link) => {
                 const isActive = activeSection === link.id;
                 return (
                   <a
@@ -256,14 +244,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
                     id={`mobile-nav-link-${link.id}`}
                     href={link.href}
                     onClick={(e) => handleNavClick(e, link.href)}
-                    className={`text-xs uppercase tracking-widest font-medium py-2.5 px-3 transition-colors flex items-center justify-between ${
+                    className={`w-full block text-xs uppercase tracking-widest font-medium py-3 px-3.5 transition-colors flex items-center justify-between cursor-pointer select-none touch-manipulation min-h-[44px] ${
                       isActive
                         ? 'bg-[#111111] text-[#CCFF00] font-bold border-l-2 border-[#CCFF00]'
-                        : 'text-gray-400 hover:text-white hover:bg-[#0E0E0E]'
+                        : 'text-gray-400 hover:text-white hover:bg-[#0E0E0E] active:bg-[#141414]'
                     }`}
+                    style={{ touchAction: 'manipulation' }}
                   >
-                    <span>{link.label}</span>
-                    {isActive && <span className="w-1.5 h-1.5 bg-[#CCFF00]" />}
+                    <span className="pointer-events-none">{link.label}</span>
+                    {isActive && <span className="w-1.5 h-1.5 bg-[#CCFF00] pointer-events-none" />}
                   </a>
                 );
               })}
@@ -274,7 +263,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
                   type="button"
                   id="mobile-start-project-btn"
                   onClick={handleStartProject}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#CCFF00] text-black font-bold text-xs uppercase tracking-widest hover:bg-[#b8e600] transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#CCFF00] text-black font-bold text-xs uppercase tracking-widest hover:bg-[#b8e600] active:bg-[#a6d100] transition-colors cursor-pointer select-none touch-manipulation min-h-[44px]"
+                  style={{ touchAction: 'manipulation' }}
                 >
                   <span>Start a Project</span>
                   <ArrowUpRight className="w-4 h-4" />
@@ -287,3 +277,4 @@ export const Navbar: React.FC<NavbarProps> = ({ onStartProjectClick, onViewWorkC
     </header>
   );
 };
+

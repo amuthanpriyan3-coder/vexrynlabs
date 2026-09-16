@@ -222,19 +222,18 @@ export const Projects: React.FC<ProjectsProps> = ({ onInquireProject }) => {
           <motion.a
             whileHover={{ scale: 1.02, transition: { duration: 0.2, ease: transitionEase } }}
             whileTap={{ scale: 0.98 }}
-            href="#contact"
+            href="/contact"
             id="projects-cta-start-btn"
             onClick={(e) => {
               e.preventDefault();
               onInquireProject('New Project');
-              const contactSec = document.getElementById('contact');
-              if (contactSec) {
-                contactSec.scrollIntoView({ behavior: 'smooth' });
-              }
-              const input = document.getElementById('contact-name-input');
-              if (input) input.focus();
+              setTimeout(() => {
+                const input = document.getElementById('contact-name-input');
+                if (input) input.focus();
+              }, 300);
             }}
-            className="inline-flex items-center justify-center gap-3 px-8 py-4 bg-[#CCFF00] hover:bg-[#b8e600] text-black font-bold text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer shadow-lg hover:shadow-xl shrink-0"
+            className="inline-flex items-center justify-center gap-3 px-8 py-4 bg-[#CCFF00] hover:bg-[#b8e600] text-black font-bold text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer shadow-lg hover:shadow-xl shrink-0 touch-manipulation"
+            style={{ touchAction: 'manipulation' }}
           >
             <span>START A PROJECT</span>
             <ArrowRight className="w-4 h-4 text-black" />

@@ -2,32 +2,20 @@ import React from 'react';
 import { ArrowUp, Instagram, Youtube, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
 import { VexrynLogo } from './VexrynLogo';
+import { navigateTo, RoutePath } from '../utils/navigation';
 
 const transitionEase = [0.16, 1, 0.3, 1] as const;
 
 export const Footer: React.FC = () => {
   const scrollToTop = () => {
-    if (window.location.hash !== '#home') {
-      window.history.pushState({ section: 'home' }, '', '#home');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateTo('/');
   };
 
-  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
+  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, targetPath: RoutePath) => {
     e.preventDefault();
-    const hash = `#${targetId}`;
-    if (window.location.hash !== hash) {
-      window.history.pushState({ section: targetId }, '', hash);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    const element = document.getElementById(targetId);
-    if (element) {
-      const yOffset = -80;
-      const y = element.getBoundingClientRect().top + window.scrollY + yOffset;
-      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-    }
+    navigateTo(targetPath);
   };
+
 
   return (
     <footer id="main-footer" className="bg-[#050505] text-gray-400 border-t border-[#1A1A1A] pt-16 pb-12">
@@ -68,9 +56,9 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2.5 text-xs font-mono uppercase tracking-wider">
               <li>
                 <a
-                  href="#home"
+                  href="/"
                   id="footer-link-home"
-                  onClick={(e) => handleLinkClick(e, 'home')}
+                  onClick={(e) => handleLinkClick(e, '/')}
                   className="text-gray-400 hover:text-[#CCFF00] transition-colors"
                 >
                   Home
@@ -78,9 +66,9 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="#services"
+                  href="/services"
                   id="footer-link-services"
-                  onClick={(e) => handleLinkClick(e, 'services')}
+                  onClick={(e) => handleLinkClick(e, '/services')}
                   className="text-gray-400 hover:text-[#CCFF00] transition-colors"
                 >
                   Services
@@ -88,9 +76,9 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="#projects"
+                  href="/projects"
                   id="footer-link-projects"
-                  onClick={(e) => handleLinkClick(e, 'projects')}
+                  onClick={(e) => handleLinkClick(e, '/projects')}
                   className="text-gray-400 hover:text-[#CCFF00] transition-colors"
                 >
                   Projects
@@ -98,9 +86,9 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="#about"
+                  href="/about"
                   id="footer-link-about"
-                  onClick={(e) => handleLinkClick(e, 'about')}
+                  onClick={(e) => handleLinkClick(e, '/about')}
                   className="text-gray-400 hover:text-[#CCFF00] transition-colors"
                 >
                   About
@@ -108,9 +96,9 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="#contact"
+                  href="/contact"
                   id="footer-link-contact"
-                  onClick={(e) => handleLinkClick(e, 'contact')}
+                  onClick={(e) => handleLinkClick(e, '/contact')}
                   className="text-gray-400 hover:text-[#CCFF00] transition-colors"
                 >
                   Contact

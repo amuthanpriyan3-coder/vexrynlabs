@@ -8,6 +8,7 @@ import { Process } from './components/Process';
 import { Contact } from './components/Contact';
 import { Footer } from './components/Footer';
 import { TechSpotlight } from './components/TechSpotlight';
+import { navigateTo } from './utils/navigation';
 
 export default function App() {
   const [selectedProjectType, setSelectedProjectType] = useState<string>('Website Development');
@@ -16,29 +17,11 @@ export default function App() {
     if (projectType) {
       setSelectedProjectType(projectType);
     }
-    if (window.location.hash !== '#contact') {
-      window.history.pushState({ section: 'contact' }, '', '#contact');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    const contactElem = document.getElementById('contact');
-    if (contactElem) {
-      const yOffset = -80;
-      const y = contactElem.getBoundingClientRect().top + window.scrollY + yOffset;
-      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-    }
+    navigateTo('/contact');
   };
 
   const scrollToProjects = () => {
-    if (window.location.hash !== '#projects') {
-      window.history.pushState({ section: 'projects' }, '', '#projects');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    const projectsElem = document.getElementById('projects');
-    if (projectsElem) {
-      const yOffset = -80;
-      const y = projectsElem.getBoundingClientRect().top + window.scrollY + yOffset;
-      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-    }
+    navigateTo('/projects');
   };
 
   return (
@@ -51,6 +34,7 @@ export default function App() {
         onStartProjectClick={() => scrollToContact()}
         onViewWorkClick={scrollToProjects}
       />
+
 
       {/* Main Page Flow */}
       <main className="flex-grow">
