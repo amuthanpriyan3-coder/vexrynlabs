@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <!-- Background -->
+  <rect width="500" height="500" fill="#000000" />
+  
+  <!-- Main V Structure (White) -->
+  <path d="M 90 140 L 205 140 L 250 250 L 295 140 L 410 140 L 255 375 L 250 375 L 245 370 Z" fill="#FFFFFF" />
+  
+  <!-- Aerodynamic Razor Slice Cut on Left Wing -->
+  <!-- Outer blade -->
+  <path d="M 152 195 Q 165 235 246 372 L 240 376 Q 150 240 140 190 Z" fill="#000000" />
+  <path d="M 139 190 Q 155 240 244 376 L 240 379 Q 130 230 135 186 Z" fill="#FFFFFF" />
+  
+  <!-- Inner Black Chevron Groove framing the lime core -->
+  <path d="M 205 140 L 250 205 L 295 140 L 305 140 L 250 220 L 195 140 Z" fill="#000000" />
+  
+  <!-- Neon Lime Inverted Triangle Core -->
+  <polygon points="207,140 293,140 250,203" fill="#D4FF00" />
+</svg>
