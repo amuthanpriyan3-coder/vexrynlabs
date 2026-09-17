@@ -165,26 +165,46 @@ app.post(['/api/contact', '/api/contact/'], async (req, res) => {
 
     // Validate inputs
     if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ success: false, error: 'Name / Company is required.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Name / Company is required.',
+        error: 'Name / Company is required.',
+      });
     }
 
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      return res.status(400).json({ success: false, error: 'A valid email address is required.' });
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required.',
+        error: 'A valid email address is required.',
+      });
     }
 
     // Validate phone number
     const digits = clientPhone.replace(/\D/g, '');
     const phoneValidChar = /^[+]?[\d\s().-]{7,25}$/.test(clientPhone);
     if (!clientPhone || !phoneValidChar || digits.length < 8 || digits.length > 15) {
-      return res.status(400).json({ success: false, error: 'A valid phone number is required.' });
+      return res.status(400).json({
+        success: false,
+        message: 'A valid phone number is required (e.g. +91 98765 43210).',
+        error: 'A valid phone number is required.',
+      });
     }
 
     if (!projectType || typeof projectType !== 'string' || !projectType.trim()) {
-      return res.status(400).json({ success: false, error: 'Project Type selection is required.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Project Type selection is required.',
+        error: 'Project Type selection is required.',
+      });
     }
 
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      return res.status(400).json({ success: false, error: 'Project message / scope is required.' });
+    if (!message || typeof message !== 'string' || message.trim().length < 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Project message / scope is required (minimum 5 characters).',
+        error: 'Project message / scope is required.',
+      });
     }
 
     // Check if email transport is configured
@@ -193,8 +213,10 @@ app.post(['/api/contact', '/api/contact/'], async (req, res) => {
       return res.status(503).json({
         success: false,
         configured: false,
+        message:
+          'Email delivery service is currently not configured on the server. Please contact vexrynlabs@gmail.com directly.',
         error:
-          'Email delivery service is not yet configured on the server. Please set SMTP_USER and SMTP_PASS (such as a 16-character Gmail App Password) in your server environment variables to deliver enquiries to vexrynlabs@gmail.com.',
+          'Email delivery service is not yet configured on the server. Please set SMTP_USER and SMTP_PASS in your server environment variables.',
       });
     }
 
@@ -272,17 +294,18 @@ Reply directly to this email to contact the client at ${email.trim()} or call ${
 
     return res.status(200).json({
       success: true,
-      message: "Request sent successfully. We'll get back to you soon.",
+      message: 'Your enquiry has been sent successfully.',
     });
   } catch (err: unknown) {
     console.error('Error sending contact enquiry email:', err);
     let errorMessage = err instanceof Error ? err.message : 'Unknown error';
     if (errorMessage.includes('535') || errorMessage.includes('BadCredentials')) {
       errorMessage =
-        'Google rejected the password (535 Bad Credentials). Google SMTP requires a dedicated 16-character App Password (e.g. "abcd efgh ijkl mnop") generated in your Google Account Security settings, not your standard Gmail login password.';
+        'Google rejected the password (535 Bad Credentials). Google SMTP requires a dedicated 16-character App Password generated in your Google Account Security settings.';
     }
     return res.status(500).json({
       success: false,
+      message: 'Unable to send enquiry. Please try again.',
       error: errorMessage,
     });
   }

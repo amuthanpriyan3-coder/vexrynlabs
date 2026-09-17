@@ -21,6 +21,7 @@ export const Contact: React.FC<ContactProps> = ({ initialProjectType = '' }) => 
   const [errors, setErrors] = useState<Partial<Record<keyof ContactFormData, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submittedDetails, setSubmittedDetails] = useState<{ email: string; projectType: string } | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isNotConfigured, setIsNotConfigured] = useState(false);
 
@@ -75,6 +76,12 @@ export const Contact: React.FC<ContactProps> = ({ initialProjectType = '' }) => 
 
     setIsSubmitting(true);
 
+    const controller = new AbortController();
+    // 15 seconds request timeout
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 15000);
+
     try {
       const response = await fetch('/api/contact', {
         method: 'POST',
@@ -90,33 +97,62 @@ export const Contact: React.FC<ContactProps> = ({ initialProjectType = '' }) => 
           projectType: formData.projectType,
           message: formData.message.trim(),
         }),
+        signal: controller.signal,
       });
 
       let data: { success?: boolean; configured?: boolean; error?: string; message?: string } | null = null;
-      try {
-        data = await response.json();
-      } catch (parseError) {
-        console.warn('Could not parse server response as JSON:', parseError);
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.warn('Could not parse server response as JSON:', parseError);
+        }
       }
 
       if (response.ok && data?.success) {
+        setSubmittedDetails({
+          email: formData.email.trim(),
+          projectType: formData.projectType,
+        });
         setIsSubmitted(true);
+        setServerError(null);
+        setIsNotConfigured(false);
+        // Clear form on success
+        setFormData({
+          name: '',
+          email: '',
+          phone: '',
+          projectType: 'Website Development',
+          message: '',
+        });
+        setErrors({});
       } else {
         if (data?.configured === false || response.status === 503) {
           setIsNotConfigured(true);
         }
-        setServerError(
+        const errorMsg =
+          data?.message ||
           data?.error ||
-            `Server error (status ${response.status} ${response.statusText || 'Unknown'}). Please reach out directly to vexrynlabs@gmail.com.`
+          (response.status === 404
+            ? 'The contact service endpoint was not found (404). Please contact vexrynlabs@gmail.com directly.'
+            : `Unable to send enquiry (Error ${response.status} ${response.statusText || 'Server Error'}). Please try again or reach out directly to vexrynlabs@gmail.com.`);
+        setServerError(errorMsg);
+      }
+    } catch (networkErr: any) {
+      console.error('Contact submission error:', networkErr);
+      if (networkErr?.name === 'AbortError') {
+        setServerError(
+          'Request timed out. The server took too long to respond. Please check your connection or reach out directly to vexrynlabs@gmail.com.'
+        );
+      } else {
+        const errMsg = networkErr instanceof Error ? networkErr.message : 'Network connection error';
+        setServerError(
+          `Unable to reach server endpoint (${errMsg}). Please check your connectivity or reach out directly to vexrynlabs@gmail.com.`
         );
       }
-    } catch (networkErr: unknown) {
-      console.error('Contact submission network error:', networkErr);
-      const errMsg = networkErr instanceof Error ? networkErr.message : 'Network error';
-      setServerError(
-        `Unable to reach server endpoint (${errMsg}). Please check connectivity or reach out directly to vexrynlabs@gmail.com.`
-      );
     } finally {
+      clearTimeout(timeoutId);
       setIsSubmitting(false);
     }
   };
@@ -133,6 +169,7 @@ export const Contact: React.FC<ContactProps> = ({ initialProjectType = '' }) => 
     setServerError(null);
     setIsNotConfigured(false);
     setIsSubmitted(false);
+    setSubmittedDetails(null);
   };
 
   return (
@@ -260,7 +297,7 @@ export const Contact: React.FC<ContactProps> = ({ initialProjectType = '' }) => 
                       Request sent successfully. We'll get back to you soon.
                     </h3>
                     <p className="text-sm sm:text-base text-gray-400 max-w-md mx-auto mb-8 leading-relaxed">
-                      Your enquiry for <span className="text-[#CCFF00]">{formData.projectType}</span> has been dispatched to <span className="text-white font-mono">vexrynlabs@gmail.com</span>. We will review your requirements and follow up directly at <span className="text-white font-mono">{formData.email}</span> within 24 hours.
+                      Your enquiry for <span className="text-[#CCFF00]">{submittedDetails?.projectType || 'your project'}</span> has been dispatched to <span className="text-white font-mono">vexrynlabs@gmail.com</span>. We will review your requirements and follow up directly at <span className="text-white font-mono">{submittedDetails?.email || 'your email'}</span> within 24 hours.
                     </p>
                     <motion.button
                       whileHover={{ scale: 1.02 }}

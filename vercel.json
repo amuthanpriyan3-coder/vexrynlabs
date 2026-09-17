@@ -41,6 +41,18 @@
       "destination": "/robots.txt"
     },
     {
+      "source": "/api/contact",
+      "destination": "/api/contact"
+    },
+    {
+      "source": "/api/contact/",
+      "destination": "/api/contact"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
+    {
       "source": "/((?!api/|sitemap\\.xml|robots\\.txt|favicon\\.svg|assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
