@@ -10,25 +10,111 @@ interface ContactRequestBody {
   message?: string;
 }
 
-// Target recipient email (defaults to vexrynlabs@gmail.com)
-const RECIPIENT_EMAIL = process.env.CONTACT_RECIPIENT_EMAIL || 'vexrynlabs@gmail.com';
-
-// Sanitize and retrieve Google App Password / SMTP password securely
-function getSanitizedSmtpPass(): string {
-  const raw = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '';
-  const trimmed = raw.trim();
-  // Filter out dummy placeholder strings
-  if (!trimmed || trimmed === 'Gmail App Password' || trimmed === 'YOUR_PASSWORD' || trimmed === 'MY_SMTP_PASS') {
-    return '';
-  }
-  // Sanitize spaces (e.g. "xxxx xxxx xxxx xxxx" -> "xxxxxxxxxxxxxxxx")
-  return trimmed.replace(/\s+/g, '');
+interface ResolvedSmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  recipient: string;
 }
 
-// Check if email transport is configured
-function isEmailConfigured(): boolean {
-  const pass = getSanitizedSmtpPass();
-  return pass.length > 0;
+// Determines if a string matches Google App Password format (16 letters, optionally spaced in 4-letter chunks)
+function isGoogleAppPassword(str: string): boolean {
+  if (!str) return false;
+  const clean = str.trim().replace(/\s+/g, '');
+  return /^[a-zA-Z]{16}$/.test(clean) && !str.includes('.');
+}
+
+// Determines if a string is a syntactically valid hostname / domain / IP
+function isValidHostname(str: string): boolean {
+  if (!str) return false;
+  const clean = str.trim();
+  if (clean.includes(' ')) return false;
+  if (clean === 'localhost') return true;
+  return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(clean);
+}
+
+// Redact any password, token, or 16-character letter groups from logs and client responses
+function redactSecrets(text: string, pass?: string): string {
+  if (!text) return '';
+  let clean = String(text);
+  if (pass && pass.length >= 4) {
+    clean = clean.split(pass).join('[REDACTED]');
+    const spaced = pass.match(/.{1,4}/g)?.join(' ');
+    if (spaced) {
+      clean = clean.split(spaced).join('[REDACTED]');
+    }
+  }
+  // Redact 4x4 letter patterns e.g. "abcd efgh ijkl mnop"
+  clean = clean.replace(/\b[a-zA-Z]{4}\s+[a-zA-Z]{4}\s+[a-zA-Z]{4}\s+[a-zA-Z]{4}\b/g, '[REDACTED]');
+  // Redact 16-character alpha tokens (excluding common words like "gmail")
+  clean = clean.replace(/\b(?![a-zA-Z]*gmail)[a-zA-Z]{16}\b/gi, '[REDACTED]');
+  return clean;
+}
+
+// Safely resolve and heal environment variables even if swapped or pasted in the wrong field
+function resolveSmtpConfig(): ResolvedSmtpConfig {
+  const rawHost = (process.env.SMTP_HOST || '').trim();
+  const rawPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim();
+  const rawUser = (process.env.SMTP_USER || process.env.GMAIL_USER || 'vexrynlabs@gmail.com').trim();
+  const rawRecipient = (process.env.CONTACT_RECIPIENT_EMAIL || 'vexrynlabs@gmail.com').trim();
+  const rawPort = (process.env.SMTP_PORT || '').trim();
+  const rawSecure = process.env.SMTP_SECURE !== undefined ? String(process.env.SMTP_SECURE).trim() : undefined;
+
+  let host = 'smtp.gmail.com';
+  let pass = '';
+
+  const hostIsAppPass = isGoogleAppPassword(rawHost);
+  const passIsAppPass = isGoogleAppPassword(rawPass);
+  const passLooksLikeHost = isValidHostname(rawPass);
+
+  // Self-healing: detect if user pasted their 16-char app password into SMTP_HOST
+  if (hostIsAppPass) {
+    pass = rawHost.replace(/\s+/g, '');
+    host = passLooksLikeHost ? rawPass : 'smtp.gmail.com';
+  } else {
+    if (isValidHostname(rawHost)) {
+      host = rawHost;
+    } else {
+      host = 'smtp.gmail.com';
+    }
+
+    if (passIsAppPass) {
+      pass = rawPass.replace(/\s+/g, '');
+    } else if (rawPass && rawPass !== 'YOUR_PASSWORD' && rawPass !== 'MY_SMTP_PASS') {
+      pass = rawPass.replace(/\s+/g, '');
+    }
+  }
+
+  // Final fallback to process.env.GMAIL_APP_PASSWORD or rawPass if pass is still empty
+  if (!pass) {
+    const fallback = (process.env.GMAIL_APP_PASSWORD || '').trim();
+    if (fallback) {
+      pass = fallback.replace(/\s+/g, '');
+    }
+  }
+
+  let port = parseInt(rawPort, 10);
+  if (isNaN(port) || port <= 0) {
+    port = 465;
+  }
+
+  let secure: boolean;
+  if (rawSecure !== undefined) {
+    secure = rawSecure === 'true' || rawSecure === '1';
+  } else {
+    secure = port === 465;
+  }
+
+  return {
+    host,
+    port,
+    secure,
+    user: rawUser || 'vexrynlabs@gmail.com',
+    pass,
+    recipient: rawRecipient || 'vexrynlabs@gmail.com',
+  };
 }
 
 function escapeHtml(str: string): string {
@@ -57,6 +143,8 @@ export default async function handler(req: any, res: any) {
       error: 'Method Not Allowed',
     });
   }
+
+  let config: ResolvedSmtpConfig | null = null;
 
   try {
     // Parse JSON body if string
@@ -124,47 +212,41 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Verify SMTP configuration
-    if (!isEmailConfigured()) {
-      console.warn('[Vercel Serverless Contact API] SMTP credentials not configured');
+    // Resolve and sanitize configuration
+    config = resolveSmtpConfig();
+
+    if (!config.pass) {
+      console.warn('[Vercel Serverless Contact API] SMTP credentials not found in environment');
       return res.status(503).json({
         success: false,
         configured: false,
         message: 'Email delivery service is currently not configured on the server. Please contact vexrynlabs@gmail.com directly.',
-        error: 'Email delivery service is not configured on the server.',
+        error: 'Email delivery service is not configured on the server (Missing SMTP credentials).',
       });
     }
 
-    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const rawPort = process.env.SMTP_PORT || '465';
-    const port = parseInt(rawPort, 10) || 465;
-    const secure = process.env.SMTP_SECURE !== undefined
-      ? (process.env.SMTP_SECURE === 'true' || process.env.SMTP_SECURE === '1')
-      : (port === 465);
+    // Helper to send via specified transport
+    const sendWithTransport = async (host: string, port: number, secure: boolean) => {
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: {
+          user: config!.user,
+          pass: config!.pass,
+        },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 12000,
+      });
 
-    const user = process.env.SMTP_USER || process.env.GMAIL_USER || 'vexrynlabs@gmail.com';
-    const pass = getSanitizedSmtpPass();
-
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: {
-        user,
-        pass,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-    });
-
-    const mailOptions = {
-      from: `"VEXRYN LABS Contact Form" <${user}>`,
-      to: RECIPIENT_EMAIL,
-      replyTo: `"${name.trim()}" <${email.trim()}>`,
-      subject: `[VEXRYN LABS] New Project Enquiry: ${projectType.trim()} — ${name.trim()}`,
-      text: `New Project Enquiry Received via VEXRYN LABS\n\nName / Company: ${name.trim()}\nClient Email: ${email.trim()}\nPhone Number: ${clientPhone}\nProject Type: ${projectType.trim()}\n\nMessage:\n${message.trim()}\n\n---\nSubmitted at: ${new Date().toUTCString()}\nReply directly to this email to contact the client at ${email.trim()} or call ${clientPhone}.`,
-      html: `
+      const mailOptions = {
+        from: `"VEXRYN LABS Contact Form" <${config!.user}>`,
+        to: config!.recipient,
+        replyTo: `"${name.trim()}" <${email.trim()}>`,
+        subject: `[VEXRYN LABS] New Project Enquiry: ${projectType.trim()} — ${name.trim()}`,
+        text: `New Project Enquiry Received via VEXRYN LABS\n\nName / Company: ${name.trim()}\nClient Email: ${email.trim()}\nPhone Number: ${clientPhone}\nProject Type: ${projectType.trim()}\n\nMessage:\n${message.trim()}\n\n---\nSubmitted at: ${new Date().toUTCString()}\nReply directly to this email to contact the client at ${email.trim()} or call ${clientPhone}.`,
+        html: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0c0d0e; color: #f3f4f6; padding: 32px; border: 1px solid #222; border-radius: 8px;">
   <div style="border-bottom: 2px solid #CCFF00; padding-bottom: 16px; margin-bottom: 24px;">
     <span style="font-family: monospace; font-size: 11px; letter-spacing: 2px; color: #CCFF00; text-transform: uppercase;">VEXRYN LABS // INQUIRY TRANSMISSION</span>
@@ -204,30 +286,66 @@ export default async function handler(req: any, res: any) {
   </div>
 
   <div style="border-top: 1px solid #222; padding-top: 16px; font-size: 11px; font-family: monospace; color: #6b7280; display: flex; justify-content: space-between;">
-    <span>Transmission target: ${escapeHtml(RECIPIENT_EMAIL)}</span>
+    <span>Transmission target: ${escapeHtml(config!.recipient)}</span>
     <span>Timestamp: ${new Date().toUTCString()}</span>
   </div>
 </div>
-      `,
+        `,
+      };
+
+      return await transporter.sendMail(mailOptions);
     };
 
-    await transporter.sendMail(mailOptions);
+    // Attempt primary connection
+    try {
+      await sendWithTransport(config.host, config.port, config.secure);
+    } catch (primaryErr: any) {
+      // If port 465 failed with network/timeout error and host is smtp.gmail.com, attempt port 587 fallback
+      const errStr = primaryErr ? String(primaryErr.message || primaryErr) : '';
+      const isNetworkTimeout = errStr.includes('ETIMEDOUT') || errStr.includes('ECONNREFUSED') || errStr.includes('ESOCKETTIMEDOUT');
+      if (isNetworkTimeout && config.port === 465 && config.host === 'smtp.gmail.com') {
+        console.warn('[Vercel Serverless Contact API] Port 465 timed out, attempting port 587 TLS fallback...');
+        await sendWithTransport(config.host, 587, false);
+      } else {
+        throw primaryErr;
+      }
+    }
 
     return res.status(200).json({
       success: true,
       message: 'Your enquiry has been sent successfully.',
     });
   } catch (err: unknown) {
-    console.error('Error in Vercel contact handler:', err);
-    let errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    if (errorMessage.includes('535') || errorMessage.includes('BadCredentials')) {
-      errorMessage =
-        'Google rejected the password (535 Bad Credentials). Google SMTP requires a dedicated 16-character App Password generated in your Google Account Security settings.';
+    const rawError = err instanceof Error ? err.message : String(err);
+    const passToRedact = config?.pass || '';
+
+    // Safe server logging with zero secret exposure
+    console.error('[Contact API Error]', {
+      name: err instanceof Error ? err.name : 'UnknownError',
+      code: (err as any)?.code || 'UNKNOWN',
+      command: (err as any)?.command || 'UNKNOWN',
+      responseCode: (err as any)?.responseCode,
+      message: redactSecrets(rawError, passToRedact),
+    });
+
+    let userFacingError = 'Unable to send enquiry. Please try again.';
+    if (rawError.includes('535') || rawError.includes('BadCredentials') || (err as any)?.responseCode === 535) {
+      userFacingError =
+        'Google SMTP authentication failed (535 Bad Credentials). Please ensure a 16-character Google App Password is set in server environment variables.';
+    } else if (rawError.includes('ENOTFOUND') || rawError.includes('EBUSY') || rawError.includes('getaddrinfo')) {
+      userFacingError =
+        'Mail server host resolution failed. Please verify that SMTP_HOST is set to smtp.gmail.com.';
+    } else if (rawError.includes('ETIMEDOUT') || rawError.includes('ECONNREFUSED') || rawError.includes('ESOCKETTIMEDOUT')) {
+      userFacingError =
+        'Connection to the mail server timed out or was refused on the configured port.';
+    } else {
+      userFacingError = redactSecrets(rawError, passToRedact);
     }
+
     return res.status(500).json({
       success: false,
       message: 'Unable to send enquiry. Please try again.',
-      error: errorMessage,
+      error: userFacingError,
     });
   }
 }
