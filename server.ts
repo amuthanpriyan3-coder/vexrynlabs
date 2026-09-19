@@ -284,21 +284,7 @@ app.post(['/api/contact', '/api/contact/'], async (req, res) => {
       });
     }
 
-    const sendWithTransport = async (host: string, port: number, secure: boolean) => {
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: {
-          user: config.user,
-          pass: config.pass,
-        },
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 12000,
-      });
-
-      const mailOptions = {
+    const mailOptions = {
         from: `"VEXRYN LABS Contact Form" <${config.user}>`,
         to: config.recipient,
         replyTo: `"${name.trim()}" <${email.trim()}>`,
@@ -365,20 +351,93 @@ Reply directly to this email to contact the client at ${email.trim()} or call ${
         `,
       };
 
-      return await transporter.sendMail(mailOptions);
-    };
+    // Prioritized list of transport options for resilient delivery on serverless & container environments
+    const attempts: Array<{
+      desc: string;
+      transportOptions: any;
+    }> = [];
 
-    try {
-      await sendWithTransport(config.host, config.port, config.secure);
-    } catch (primaryErr: any) {
-      const errStr = primaryErr ? String(primaryErr.message || primaryErr) : '';
-      const isNetworkTimeout = errStr.includes('ETIMEDOUT') || errStr.includes('ECONNREFUSED') || errStr.includes('ESOCKETTIMEDOUT');
-      if (isNetworkTimeout && config.port === 465 && config.host === 'smtp.gmail.com') {
-        console.warn('[Contact API] Port 465 timed out, attempting port 587 TLS fallback...');
-        await sendWithTransport(config.host, 587, false);
-      } else {
-        throw primaryErr;
+    // Primary: User's exact configured settings (e.g. smtp.gmail.com:465 with secure: true)
+    attempts.push({
+      desc: `${config.host}:${config.port} (secure: ${config.secure})`,
+      transportOptions: {
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        requireTLS: config.port === 587,
+        auth: {
+          user: config.user,
+          pass: config.pass,
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      } as any,
+    });
+
+    // Secondary: Port 587 with STARTTLS if primary is 465
+    if (config.port !== 587) {
+      attempts.push({
+        desc: `${config.host}:587 (STARTTLS)`,
+        transportOptions: {
+          host: config.host,
+          port: 587,
+          secure: false,
+          requireTLS: true,
+          auth: {
+            user: config.user,
+            pass: config.pass,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        } as any,
+      });
+    }
+
+    // Tertiary: If host is Gmail, also offer service: 'gmail'
+    if (config.host.toLowerCase().includes('gmail')) {
+      attempts.push({
+        desc: `service: 'gmail'`,
+        transportOptions: {
+          service: 'gmail',
+          auth: {
+            user: config.user,
+            pass: config.pass,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        } as any,
+      });
+    }
+
+    let sent = false;
+    let lastError: any = null;
+
+    for (const attempt of attempts) {
+      try {
+        const transporter = nodemailer.createTransport(attempt.transportOptions);
+        await transporter.sendMail(mailOptions);
+        sent = true;
+        break; // Successfully sent!
+      } catch (attemptErr: any) {
+        lastError = attemptErr;
+        const errStr = attemptErr ? String(attemptErr.message || attemptErr) : '';
+
+        // If credentials are bad (535 Bad Credentials), trying other ports will not help
+        if (errStr.includes('535') || errStr.includes('BadCredentials') || attemptErr?.responseCode === 535) {
+          throw attemptErr;
+        }
+
+        console.warn(
+          `[Contact API] Transport ${attempt.desc} failed (${redactSecrets(errStr, config.pass)}). Attempting resilient fallback...`
+        );
       }
+    }
+
+    if (!sent) {
+      throw lastError || new Error('Failed to dispatch email after all transport options.');
     }
 
     return res.status(200).json({

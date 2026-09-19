@@ -77,10 +77,10 @@ export const Contact: React.FC<ContactProps> = ({ initialProjectType = '' }) => 
     setIsSubmitting(true);
 
     const controller = new AbortController();
-    // 15 seconds request timeout
+    // 25 seconds request timeout to allow multi-transport delivery on serverless
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 15000);
+    }, 25000);
 
     try {
       const response = await fetch('/api/contact', {

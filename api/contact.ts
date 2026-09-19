@@ -87,7 +87,7 @@ function resolveSmtpConfig(): ResolvedSmtpConfig {
     }
   }
 
-  // Final fallback to process.env.GMAIL_APP_PASSWORD or rawPass if pass is still empty
+  // Final fallback to process.env.GMAIL_APP_PASSWORD if pass is still empty
   if (!pass) {
     const fallback = (process.env.GMAIL_APP_PASSWORD || '').trim();
     if (fallback) {
@@ -225,28 +225,13 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Helper to send via specified transport
-    const sendWithTransport = async (host: string, port: number, secure: boolean) => {
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: {
-          user: config!.user,
-          pass: config!.pass,
-        },
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 12000,
-      });
-
-      const mailOptions = {
-        from: `"VEXRYN LABS Contact Form" <${config!.user}>`,
-        to: config!.recipient,
-        replyTo: `"${name.trim()}" <${email.trim()}>`,
-        subject: `[VEXRYN LABS] New Project Enquiry: ${projectType.trim()} — ${name.trim()}`,
-        text: `New Project Enquiry Received via VEXRYN LABS\n\nName / Company: ${name.trim()}\nClient Email: ${email.trim()}\nPhone Number: ${clientPhone}\nProject Type: ${projectType.trim()}\n\nMessage:\n${message.trim()}\n\n---\nSubmitted at: ${new Date().toUTCString()}\nReply directly to this email to contact the client at ${email.trim()} or call ${clientPhone}.`,
-        html: `
+    const mailOptions = {
+      from: `"VEXRYN LABS Contact Form" <${config.user}>`,
+      to: config.recipient,
+      replyTo: `"${name.trim()}" <${email.trim()}>`,
+      subject: `[VEXRYN LABS] New Project Enquiry: ${projectType.trim()} — ${name.trim()}`,
+      text: `New Project Enquiry Received via VEXRYN LABS\n\nName / Company: ${name.trim()}\nClient Email: ${email.trim()}\nPhone Number: ${clientPhone}\nProject Type: ${projectType.trim()}\n\nMessage:\n${message.trim()}\n\n---\nSubmitted at: ${new Date().toUTCString()}\nReply directly to this email to contact the client at ${email.trim()} or call ${clientPhone}.`,
+      html: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0c0d0e; color: #f3f4f6; padding: 32px; border: 1px solid #222; border-radius: 8px;">
   <div style="border-bottom: 2px solid #CCFF00; padding-bottom: 16px; margin-bottom: 24px;">
     <span style="font-family: monospace; font-size: 11px; letter-spacing: 2px; color: #CCFF00; text-transform: uppercase;">VEXRYN LABS // INQUIRY TRANSMISSION</span>
@@ -286,29 +271,103 @@ export default async function handler(req: any, res: any) {
   </div>
 
   <div style="border-top: 1px solid #222; padding-top: 16px; font-size: 11px; font-family: monospace; color: #6b7280; display: flex; justify-content: space-between;">
-    <span>Transmission target: ${escapeHtml(config!.recipient)}</span>
+    <span>Transmission target: ${escapeHtml(config.recipient)}</span>
     <span>Timestamp: ${new Date().toUTCString()}</span>
   </div>
 </div>
-        `,
-      };
-
-      return await transporter.sendMail(mailOptions);
+      `,
     };
 
-    // Attempt primary connection
-    try {
-      await sendWithTransport(config.host, config.port, config.secure);
-    } catch (primaryErr: any) {
-      // If port 465 failed with network/timeout error and host is smtp.gmail.com, attempt port 587 fallback
-      const errStr = primaryErr ? String(primaryErr.message || primaryErr) : '';
-      const isNetworkTimeout = errStr.includes('ETIMEDOUT') || errStr.includes('ECONNREFUSED') || errStr.includes('ESOCKETTIMEDOUT');
-      if (isNetworkTimeout && config.port === 465 && config.host === 'smtp.gmail.com') {
-        console.warn('[Vercel Serverless Contact API] Port 465 timed out, attempting port 587 TLS fallback...');
-        await sendWithTransport(config.host, 587, false);
-      } else {
-        throw primaryErr;
+    // Prioritized list of transport options for resilient delivery on serverless environments
+    // Attempt 1: Explicitly configured host & port (e.g. smtp.gmail.com:465 with secure: true)
+    // Attempt 2: Port 587 with STARTTLS (the cloud standard that overcomes port 465 greeting drops in AWS Lambda / Vercel)
+    // Attempt 3: service: 'gmail' (Nodemailer's built-in Gmail transport profile)
+    const attempts: Array<{
+      desc: string;
+      transportOptions: any;
+    }> = [];
+
+    // Primary: User's exact configured settings
+    attempts.push({
+      desc: `${config.host}:${config.port} (secure: ${config.secure})`,
+      transportOptions: {
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        requireTLS: config.port === 587,
+        auth: {
+          user: config.user,
+          pass: config.pass,
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      } as any,
+    });
+
+    // Secondary: Port 587 with STARTTLS if primary is 465
+    if (config.port !== 587) {
+      attempts.push({
+        desc: `${config.host}:587 (STARTTLS)`,
+        transportOptions: {
+          host: config.host,
+          port: 587,
+          secure: false,
+          requireTLS: true,
+          auth: {
+            user: config.user,
+            pass: config.pass,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        } as any,
+      });
+    }
+
+    // Tertiary: If host is Gmail, also offer service: 'gmail'
+    if (config.host.toLowerCase().includes('gmail')) {
+      attempts.push({
+        desc: `service: 'gmail'`,
+        transportOptions: {
+          service: 'gmail',
+          auth: {
+            user: config.user,
+            pass: config.pass,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        } as any,
+      });
+    }
+
+    let sent = false;
+    let lastError: any = null;
+
+    for (const attempt of attempts) {
+      try {
+        const transporter = nodemailer.createTransport(attempt.transportOptions);
+        await transporter.sendMail(mailOptions);
+        sent = true;
+        break; // Successfully sent!
+      } catch (attemptErr: any) {
+        lastError = attemptErr;
+        const errStr = attemptErr ? String(attemptErr.message || attemptErr) : '';
+
+        // If credentials are bad (535 Bad Credentials), trying other ports will not help
+        if (errStr.includes('535') || errStr.includes('BadCredentials') || attemptErr?.responseCode === 535) {
+          throw attemptErr;
+        }
+
+        console.warn(
+          `[Vercel Serverless Contact API] Transport ${attempt.desc} failed (${redactSecrets(errStr, config.pass)}). Attempting resilient fallback...`
+        );
       }
+    }
+
+    if (!sent) {
+      throw lastError || new Error('Failed to dispatch email after all transport options.');
     }
 
     return res.status(200).json({
